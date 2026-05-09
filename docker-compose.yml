@@ -1,0 +1,58 @@
+services:
+  rabbitmq:
+    image: rabbitmq:4-management
+    container_name: rabbitmq
+
+    ports:
+      - '5672:5672'
+      - '15672:15672'
+
+  product-service:
+    build:
+      context: ./services/product-service
+
+    container_name: product-service
+
+    ports:
+      - '3001:3001'
+
+    volumes:
+      - ./services/product-service:/app
+      - /app/node_modules
+
+    depends_on:
+      - rabbitmq
+
+  inventory-service:
+    build:
+      context: ./services/inventory-service
+
+    container_name: inventory-service
+
+    ports:
+      - '3003:3003'
+
+    volumes:
+      - ./services/inventory-service:/app
+      - /app/node_modules
+
+    depends_on:
+      - rabbitmq
+
+  cart-service:
+    build:
+      context: ./services/cart-service
+
+    container_name: cart-service
+
+    ports:
+      - '3002:3002'
+
+    volumes:
+      - ./services/cart-service:/app
+      - /app/node_modules
+
+    depends_on:
+      - rabbitmq
+      - inventory-service
+      - product-service

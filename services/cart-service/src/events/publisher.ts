@@ -1,0 +1,34 @@
+import amqp from 'amqplib';
+
+export class EventPublisher {
+  private channel: any;
+
+  async connect() {
+    async function connectWithRetry() {
+      let retries = 10;
+
+      while (retries > 0) {
+        try {
+          return await amqp.connect('amqp://rabbitmq');
+        } catch (err) {
+          console.log('RabbitMQ not ready yet. Retrying...');
+          retries--;
+          await new Promise((resolve) => setTimeout(resolve, 3000));
+        }
+      }
+
+      throw new Error('Could not connect to RabbitMQ');
+    }
+    const connection = await connectWithRetry();
+    this.channel = await connection.createChannel();
+
+    await this.channel.assertQueue('inventory_queue');
+  }
+
+  async publish(event: any) {
+    this.channel.sendToQueue(
+      'inventory_queue',
+      Buffer.from(JSON.stringify(event)),
+    );
+  }
+}
