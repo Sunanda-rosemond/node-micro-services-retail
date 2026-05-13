@@ -5,7 +5,7 @@ export class EventPublisher {
 
   async connect() {
     const connectWithRetry = async () => {
-      let retries = 10;
+      let retries = 30;
 
       while (retries > 0) {
         try {
@@ -26,6 +26,10 @@ export class EventPublisher {
   }
 
   async publish(event: any) {
+    if (!this.channel) {
+      throw new Error('RabbitMQ channel is not initialized');
+    }
+
     this.channel.sendToQueue('cart_queue', Buffer.from(JSON.stringify(event)));
   }
 }

@@ -1,14 +1,12 @@
 import { v4 as uuid } from 'uuid';
 import { Cart } from '../models/cart';
 import { CartRepository } from '../repository/cart.repository';
-import { ProductClient } from '../clients/product.client';
 import { InventoryClient } from '../clients/inventory.client';
 import { EventPublisher } from '../events/publisher';
 
 export class CartService {
   constructor(
     private cartRepository: CartRepository,
-    private productClient: ProductClient,
     private inventoryClient: InventoryClient,
     private eventPublisher: EventPublisher,
   ) {}
@@ -32,7 +30,7 @@ export class CartService {
     if (!cart) {
       throw new Error('Cart not found');
     }
-    await this.releaseExpiredReservations(cart);
+    //await this.releaseExpiredReservations(cart);
     return cart;
   }
 
@@ -43,16 +41,11 @@ export class CartService {
       throw new Error('Cart is not active');
     }
 
-    //const product = await this.inventoryClient.reserve(productId, quantity);
-    const product = await this.eventPublisher.publish({
+    await this.eventPublisher.publishToInventory({
       type: 'RESERVE_STOCK',
       productId,
       quantity,
     });
-
-    // if (product.stock < quantity) {
-    //   throw new Error('Not enough stock');
-    // }
 
     const existingItem = cart.items.find(
       (item) => item.productId === productId,
@@ -61,6 +54,7 @@ export class CartService {
     if (existingItem) {
       existingItem.quantity += quantity;
       existingItem.reservedAt = new Date();
+      existingItem.status = 'PENDING';
     } else {
       cart.items.push({
         productId,
@@ -136,27 +130,54 @@ export class CartService {
       throw new Error('Cart is empty');
     }
 
+    const hasPendingOrFailedItems = cart.items.some(
+      (item) => item.status !== 'RESERVED',
+    );
+
+    if (hasPendingOrFailedItems) {
+      throw new Error('Cart contains pending or failed items');
+    }
+
     const confirmedItems: { productId: string; quantity: number }[] = [];
+
     try {
       for (const item of cart.items) {
         await this.inventoryClient.confirm(item.productId, item.quantity);
 
-        // track successful steps
         confirmedItems.push({
           productId: item.productId,
           quantity: item.quantity,
         });
       }
-
-      cart.status = 'CHECKED_OUT';
-
-      return this.cartRepository.update(cart);
-    } catch (e) {
+    } catch {
       for (const item of confirmedItems) {
         await this.inventoryClient.release(item.productId, item.quantity);
       }
-      throw new Error('Checkout failed, roleed back reservations');
+
+      throw new Error('Checkout failed, rolled back reservations');
     }
+
+    cart.status = 'CHECKED_OUT';
+
+    const updatedCart = this.cartRepository.update(cart);
+    if (!updatedCart) {
+      throw new Error('Failed to update cart');
+    }
+
+    console.log('Publishing CHECKOUT_COMPLETED', {
+      cartId: updatedCart.id,
+      items: updatedCart.items,
+    });
+    await this.eventPublisher.publishToOrder({
+      type: 'CHECKOUT_COMPLETED',
+      cartId: updatedCart.id,
+      items: updatedCart.items.map((item) => ({
+        productId: item.productId,
+        quantity: item.quantity,
+      })),
+    });
+
+    return updatedCart;
   }
   async markItemReserved(productId: string) {
     const carts = this.cartRepository.findAll();

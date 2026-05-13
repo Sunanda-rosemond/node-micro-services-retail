@@ -38,12 +38,13 @@ export class EventConsumer {
       try {
         if (event.type === 'RESERVE_STOCK') {
           this.service.reserve(event.productId, event.quantity);
+
+          await this.eventPublisher.publish({
+            type: 'STOCK_RESERVED',
+            productId: event.productId,
+            quantity: event.quantity,
+          });
         }
-        // ✅ publish SUCCESS event
-        await this.eventPublisher.publish({
-          type: 'STOCK_RESERVED',
-          productId: event.productId,
-        });
 
         if (event.type === 'RELEASE_STOCK') {
           this.service.release(event.productId, event.quantity);
@@ -51,12 +52,16 @@ export class EventConsumer {
 
         channel.ack(msg);
       } catch (err) {
-        // ✅ publish FAILURE event
-        await this.eventPublisher.publish({
-          type: 'STOCK_FAILED',
-          productId: event.productId,
-        });
         console.error('Error processing event', err);
+
+        if (event.type === 'RESERVE_STOCK') {
+          await this.eventPublisher.publish({
+            type: 'STOCK_FAILED',
+            productId: event.productId,
+            quantity: event.quantity,
+          });
+        }
+
         channel.ack(msg);
       }
     });

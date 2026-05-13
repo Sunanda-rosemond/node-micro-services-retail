@@ -5,7 +5,7 @@ export class EventPublisher {
 
   async connect() {
     async function connectWithRetry() {
-      let retries = 10;
+      let retries = 60;
 
       while (retries > 0) {
         try {
@@ -23,12 +23,25 @@ export class EventPublisher {
     this.channel = await connection.createChannel();
 
     await this.channel.assertQueue('inventory_queue');
+    await this.channel.assertQueue('order_queue');
   }
 
-  async publish(event: any) {
+  async publishToInventory(event: any) {
+    if (!this.channel) {
+      throw new Error('RabbitMQ channel is not initialized');
+    }
+
     this.channel.sendToQueue(
       'inventory_queue',
       Buffer.from(JSON.stringify(event)),
     );
+  }
+
+  async publishToOrder(event: any) {
+    if (!this.channel) {
+      throw new Error('RabbitMQ channel is not initialized');
+    }
+
+    this.channel.sendToQueue('order_queue', Buffer.from(JSON.stringify(event)));
   }
 }
