@@ -3,7 +3,7 @@ import { OrderService } from '../services/order.service';
 import { EventPublisher } from './publisher';
 
 async function connectWithRetry() {
-  let retries = 10;
+  let retries = 40;
 
   while (retries > 0) {
     try {
@@ -38,7 +38,7 @@ export class EventConsumer {
 
       try {
         if (event.type === 'CHECKOUT_COMPLETED') {
-          const order = this.orderService.createOrder(
+          const order = await this.orderService.createOrder(
             event.cartId,
             event.items,
           );

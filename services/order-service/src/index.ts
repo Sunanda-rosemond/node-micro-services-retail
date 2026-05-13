@@ -10,6 +10,7 @@ app.use(express.json());
 
 async function bootstrap() {
   const orderRepository = new OrderRepository();
+  await orderRepository.init();
   const orderService = new OrderService(orderRepository);
 
   const eventPublisher = new EventPublisher();

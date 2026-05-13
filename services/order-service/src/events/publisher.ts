@@ -1,7 +1,7 @@
 import amqp from 'amqplib';
 
 async function connectWithRetry() {
-  let retries = 10;
+  let retries = 40;
 
   while (retries > 0) {
     try {

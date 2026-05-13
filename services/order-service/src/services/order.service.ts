@@ -5,7 +5,7 @@ import { Order, OrderItem } from '../models/order';
 export class OrderService {
   constructor(private orderRepository: OrderRepository) {}
 
-  createOrder(cartId: string, items: OrderItem[]): Order {
+  async createOrder(cartId: string, items: OrderItem[]): Promise<Order> {
     const order: Order = {
       id: uuid(),
       cartId,
@@ -14,20 +14,19 @@ export class OrderService {
       createdAt: new Date(),
     };
 
-    return this.orderRepository.create(order);
+    return await this.orderRepository.create(order);
   }
 
-  getOrders(): Order[] {
-    return this.orderRepository.findAll();
+  async getOrders(): Promise<Order[]> {
+    return await this.orderRepository.findAll();
   }
 
-  getOrder(id: string): Order {
-    const order = this.orderRepository.findById(id);
+  async getOrder(id: string): Promise<Order> {
+    const order = await this.orderRepository.findById(id);
 
     if (!order) {
       throw new Error('Order not found');
     }
-
     return order;
   }
 }

@@ -62,8 +62,31 @@ services:
     volumes:
       - ./services/order-service:/app
       - /app/node_modules
+    environment:
+      DATABASE_URL: postgresql://postgres:password@postgres:5432/retail_orders
     depends_on:
       rabbitmq:
         condition: service_healthy
       cart-service:
         condition: service_started
+      postgres:
+        condition: service_healthy
+
+  postgres:
+    image: postgres:16
+    container_name: postgres
+    environment:
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: password
+      POSTGRES_DB: retail_orders
+    ports:
+      - '5432:5432'
+    volumes:
+      - postgres-data:/var/lib/postgresql/data
+    healthcheck:
+      test: ['CMD-SHELL', 'pg_isready -U postgres']
+      interval: 10s
+      timeout: 30s
+      retries: 5
+volumes:
+  postgres-data:
