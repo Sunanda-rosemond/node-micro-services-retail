@@ -5,38 +5,43 @@ import { ProductRepository } from '../repository/product.repository.js';
 export class ProductService {
   constructor(private repo: ProductRepository) {}
 
-  getProducts(): Product[] {
-    return this.repo.findAll();
+  async getProducts(): Promise<Product[]> {
+    return await this.repo.findAll();
   }
 
-  getProduct(id: string): Product | undefined {
-    const product = this.repo.findById(id);
+  async getProduct(id: string): Promise<Product | undefined> {
+    const product = await this.repo.findById(id);
     if (!product) throw new Error('Product not found');
     return product;
   }
 
-  createProduct(name: string, price: number, stock: number): Product {
+  async createProduct(
+    name: string,
+    price: number,
+    stock: number,
+  ): Promise<Product> {
     const product: Product = {
       id: uuidv4(),
       name,
       price,
       stock,
     };
-    this.repo.create(product);
+    await this.repo.create(product);
     return product;
   }
-  updateStock(id: string, stock: number): Product {
-    const product = this.repo.updateStock(id, stock);
+  async updateStock(id: string, stock: number): Promise<Product> {
+    const product = await this.repo.updateStock(id, stock);
     if (!product) throw new Error('Product not found');
     return product;
   }
 
-  deleteProduct(id: string): void {
-    const deleted = this.repo.delete(id);
+  async deleteProduct(id: string): Promise<void> {
+    const deleted = await this.repo.delete(id);
     if (!deleted) throw new Error('Product not found');
   }
-  reserveStock(id: string, quantity: number) {
-    const product = this.getProduct(id);
+
+  async reserveStock(id: string, quantity: number): Promise<Product> {
+    const product = await this.getProduct(id);
     if (!product) {
       throw new Error('Product not found');
     }
@@ -46,8 +51,8 @@ export class ProductService {
     product.stock -= quantity;
     return product;
   }
-  releaseStock(id: string, quantity: number) {
-    const product = this.repo.findById(id);
+  async releaseStock(id: string, quantity: number): Promise<Product> {
+    const product = await this.repo.findById(id);
     if (!product) {
       throw new Error('Product not found');
     }

@@ -7,14 +7,21 @@ var colors = require('colors/safe');
 const app = express();
 app.use(express.json());
 
-const repo = new ProductRepository();
-const service = new ProductService(repo);
+async function bootstrap() {
+  const repo = new ProductRepository();
+  await repo.init();
+  const service = new ProductService(repo);
 
-const routes = new ProductRoutes(service);
+  const routes = new ProductRoutes(service);
 
-const PORT = 3001;
+  const PORT = 3001;
 
-app.use('/products', routes.router);
-app.listen(PORT, () => {
-  console.log(colors.green(`Server is running on port ${PORT}`));
+  app.use('/products', routes.router);
+  app.listen(PORT, () => {
+    console.log(colors.green(`Server is running on port ${PORT}`));
+  });
+}
+bootstrap().catch((err) => {
+  console.error(colors.red('Failed to start server:'), err);
+  process.exit(1);
 });

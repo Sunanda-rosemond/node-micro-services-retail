@@ -19,8 +19,12 @@ services:
     volumes:
       - ./services/product-service:/app
       - /app/node_modules
+    environment:
+      DATABASE_URL: postgresql://postgres:password@postgres:5432/db
     depends_on:
       rabbitmq:
+        condition: service_healthy
+      postgres:
         condition: service_healthy
 
   inventory-service:
@@ -78,7 +82,7 @@ services:
     environment:
       POSTGRES_USER: postgres
       POSTGRES_PASSWORD: password
-      POSTGRES_DB: retail_orders
+      POSTGRES_DB: db
     ports:
       - '5432:5432'
     volumes:

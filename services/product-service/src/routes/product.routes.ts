@@ -4,47 +4,57 @@ import { ProductService } from '../services/product.service';
 export class ProductRoutes {
   router: Router = Router();
   constructor(private service: ProductService) {
-    this.router.get('/', (req, res) => {
-      res.json(this.service.getProducts());
+    this.router.get('/', async (req, res) => {
+      res.json(await this.service.getProducts());
     });
-    this.router.get('/:id', (req, res) => {
+    this.router.get('/:id', async (req, res) => {
       try {
-        const product = this.service.getProduct(req.params.id);
+        const product = await this.service.getProduct(req.params.id);
         res.json(product);
       } catch (e) {
         res.status(404).json({ msg: 'Product not found' });
       }
     });
-    this.router.post('/', (req, res) => {
-      const { name, price, stock } = req.body;
-      if (!name || price === undefined || stock === null) {
-        return res.status(400).json({ msg: 'Invalid input' });
+    this.router.post('/', async (req, res) => {
+      try {
+        const { name, price, stock } = req.body;
+
+        const product = await this.service.createProduct(name, price, stock);
+
+        res.status(201).json(product);
+      } catch (e) {
+        console.log('CREATE PRODUCT ERROR:', e);
+
+        res.status(500).json({
+          msg: e instanceof Error ? e.message : 'Unable to create product',
+        });
       }
-      const product = this.service.createProduct(name, price, stock);
-      res.status(201).json(product);
     });
 
-    this.router.patch('/:id', (req, res) => {
+    this.router.patch('/:id', async (req, res) => {
       try {
-        const product = this.service.updateStock(req.params.id, req.body.stock);
+        const product = await this.service.updateStock(
+          req.params.id,
+          req.body.stock,
+        );
         res.json(product);
       } catch (e) {
         res.status(404).json({ msg: 'Product not found' });
       }
     });
 
-    this.router.delete('/:id', (req, res) => {
+    this.router.delete('/:id', async (req, res) => {
       try {
-        this.service.deleteProduct(req.params.id);
+        await this.service.deleteProduct(req.params.id);
         res.status(204).send();
       } catch (e) {
         res.status(404).json({ msg: 'Product not found' });
       }
     });
 
-    this.router.patch('/:id/reserve', (req, res) => {
+    this.router.patch('/:id/reserve', async (req, res) => {
       try {
-        const product = this.service.reserveStock(
+        const product = await this.service.reserveStock(
           req.params.id,
           req.body.quantity,
         );
@@ -53,9 +63,9 @@ export class ProductRoutes {
         res.status(400).json({ msg: (e as Error).message });
       }
     });
-    this.router.patch('/:id/release', (req, res) => {
+    this.router.patch('/:id/release', async (req, res) => {
       try {
-        const product = this.service.releaseStock(
+        const product = await this.service.releaseStock(
           req.params.id,
           req.body.quantity,
         );
