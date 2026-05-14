@@ -5,18 +5,18 @@ export class CartRoutes {
   router: Router = Router();
 
   constructor(private service: CartService) {
-    this.router.post('/', (req, res) => {
-      const cart = this.service.createCart();
+    this.router.post('/', async (req, res) => {
+      const cart = await this.service.createCart();
       res.status(201).json(cart);
     });
 
-    this.router.get('/', (req, res) => {
-      res.json(this.service.getCarts());
+    this.router.get('/', async (req, res) => {
+      res.json(await this.service.getCarts());
     });
 
-    this.router.get('/:id', (req, res) => {
+    this.router.get('/:id', async (req, res) => {
       try {
-        const cart = this.service.getCart(req.params.id);
+        const cart = await this.service.getCart(req.params.id);
         res.json(cart);
       } catch {
         res.status(404).json({ msg: 'Cart not found' });
@@ -44,9 +44,9 @@ export class CartRoutes {
       }
     });
 
-    this.router.patch('/:id/items/:productId', (req, res) => {
+    this.router.patch('/:id/items/:productId', async (req, res) => {
       try {
-        const cart = this.service.updateItem(
+        const cart = await this.service.updateItem(
           req.params.id,
           req.params.productId,
           req.body.quantity,
@@ -58,9 +58,9 @@ export class CartRoutes {
       }
     });
 
-    this.router.delete('/:id/items/:productId', (req, res) => {
+    this.router.delete('/:id/items/:productId', async (req, res) => {
       try {
-        const cart = this.service.removeItem(
+        const cart = await this.service.removeItem(
           req.params.id,
           req.params.productId,
         );
@@ -71,9 +71,9 @@ export class CartRoutes {
       }
     });
 
-    this.router.delete('/:id', (req, res) => {
+    this.router.delete('/:id', async (req, res) => {
       try {
-        this.service.deleteCart(req.params.id);
+        await this.service.deleteCart(req.params.id);
         res.status(204).send();
       } catch {
         res.status(404).json({ msg: 'Cart not found' });

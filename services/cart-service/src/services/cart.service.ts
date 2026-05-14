@@ -11,21 +11,21 @@ export class CartService {
     private eventPublisher: EventPublisher,
   ) {}
 
-  createCart(): Cart {
+  async createCart(): Promise<Cart> {
     const cart: Cart = {
       id: uuid(),
       items: [],
       status: 'ACTIVE',
       createdAt: new Date(),
     };
-    return this.cartRepository.create(cart);
+    return await this.cartRepository.create(cart);
   }
 
-  getCarts(): Cart[] {
-    return this.cartRepository.findAll();
+  async getCarts(): Promise<Cart[]> {
+    return await this.cartRepository.findAll();
   }
   async getCart(id: string): Promise<Cart> {
-    const cart = this.cartRepository.findById(id);
+    const cart = await this.cartRepository.findById(id);
 
     if (!cart) {
       throw new Error('Cart not found');
@@ -64,7 +64,7 @@ export class CartService {
       });
     }
 
-    return this.cartRepository.update(cart);
+    return await this.cartRepository.update(cart);
   }
 
   async updateItem(
@@ -82,7 +82,7 @@ export class CartService {
 
     item.quantity = quantity;
 
-    return this.cartRepository.update(cart);
+    return await this.cartRepository.update(cart);
   }
 
   async removeItem(
@@ -96,8 +96,8 @@ export class CartService {
     return this.cartRepository.update(cart);
   }
 
-  deleteCart(cartId: string): void {
-    const deleted = this.cartRepository.delete(cartId);
+  async deleteCart(cartId: string): Promise<void> {
+    const deleted = await this.cartRepository.delete(cartId);
 
     if (!deleted) {
       throw new Error('Cart not found');
@@ -117,7 +117,7 @@ export class CartService {
     cart.items = cart.items.filter(
       (item) => !item.reservedAt || !this.isExpired(item.reservedAt),
     );
-    return this.cartRepository.update(cart);
+    return await this.cartRepository.update(cart);
   }
   async checkout(cartId: string) {
     const cart = await this.getCart(cartId);
@@ -159,15 +159,15 @@ export class CartService {
 
     cart.status = 'CHECKED_OUT';
 
-    const updatedCart = this.cartRepository.update(cart);
+    const updatedCart = await this.cartRepository.update(cart);
     if (!updatedCart) {
       throw new Error('Failed to update cart');
     }
 
-    console.log('Publishing CHECKOUT_COMPLETED', {
-      cartId: updatedCart.id,
-      items: updatedCart.items,
-    });
+    // console.log('Publishing CHECKOUT_COMPLETED', {
+    //   cartId: updatedCart.id,
+    //   items: updatedCart.items,
+    // });
     await this.eventPublisher.publishToOrder({
       type: 'CHECKOUT_COMPLETED',
       cartId: updatedCart.id,
@@ -180,7 +180,7 @@ export class CartService {
     return updatedCart;
   }
   async markItemReserved(productId: string) {
-    const carts = this.cartRepository.findAll();
+    const carts = await this.cartRepository.findAll();
 
     for (const cart of carts) {
       const item = cart.items.find(
@@ -189,12 +189,12 @@ export class CartService {
 
       if (item) {
         item.status = 'RESERVED';
-        this.cartRepository.update(cart);
+        await this.cartRepository.update(cart);
       }
     }
   }
   async markItemFailed(productId: string) {
-    const carts = this.cartRepository.findAll();
+    const carts = await this.cartRepository.findAll();
 
     for (const cart of carts) {
       const item = cart.items.find(
@@ -203,7 +203,7 @@ export class CartService {
 
       if (item) {
         item.status = 'FAILED';
-        this.cartRepository.update(cart);
+        await this.cartRepository.update(cart);
       }
     }
   }

@@ -14,6 +14,7 @@ async function bootstrap() {
   const eventPublisher = new EventPublisher();
   await eventPublisher.connect();
   const repo = new CartRepository();
+  await repo.init();
   const service = new CartService(repo, inventoryClient, eventPublisher);
   const eventConsumer = new EventConsumer(service);
   await eventConsumer.start();
