@@ -1,412 +1,798 @@
-# Event-Driven Retail Platform (Node.js Microservices)
+# Node Microservices Retail Platform
 
 ## Overview
 
-A distributed retail backend platform built using Node.js, TypeScript, RabbitMQ, and Docker Compose.
+This project is a local microservices-based retail backend built with Node.js, TypeScript, Express, RabbitMQ, PostgreSQL, and Docker Compose.
 
-This project demonstrates:
+It models a simplified retail shopping flow where customers can:
 
-- Microservices architecture
-- Event-driven communication
-- Saga pattern with compensation
-- Inventory reservation lifecycle
-- Eventual consistency
-- RabbitMQ messaging
+- View products
+- Create a cart
+- Add products to the cart
+- Reserve inventory asynchronously
+- Checkout the cart
+- Create an order through an event-driven workflow
+
+The project demonstrates core backend and distributed systems concepts including:
+
+- Microservice separation
+- Event-driven communication with RabbitMQ
+- PostgreSQL persistence
 - Docker Compose orchestration
 - Service-to-service communication
-- Distributed workflow handling
-
-The system models a simplified retail checkout platform where carts reserve stock asynchronously through RabbitMQ.
+- Inventory reservation flow
+- Checkout workflow
+- Data persistence across service restarts
 
 ---
 
-# Architecture
+## Architecture
+
+The platform is split into four main services:
 
 ```txt
-                    ┌──────────────────┐
-                    │   RabbitMQ       │
-                    │ Event Broker     │
-                    └────────┬─────────┘
-                             │
-         ┌───────────────────┼───────────────────┐
-         │                   │                   │
-         ▼                   ▼                   ▼
-┌────────────────┐ ┌────────────────┐ ┌────────────────┐
-│ Cart Service   │ │ Inventory      │ │ Product        │
-│                │ │ Service        │ │ Service        │
-│ - Create cart  │ │ - Reserve      │ │ - Product data │
-│ - Add items    │ │ - Release      │ │ - Metadata     │
-│ - Checkout     │ │ - Confirm      │ │                │
-│ - Saga logic   │ │ - Stock state  │ │                │
-└────────────────┘ └────────────────┘ └────────────────┘
+Product Service
+Inventory Service
+Cart Service
+Order Service
+```
+
+Supporting infrastructure:
+
+```txt
+RabbitMQ
+PostgreSQL
+Docker Compose
 ```
 
 ---
 
-# Tech Stack
+## Services
 
-| Technology     | Purpose                 |
-| -------------- | ----------------------- |
-| Node.js        | Backend runtime         |
-| TypeScript     | Type safety             |
-| Express        | REST APIs               |
-| RabbitMQ       | Event broker            |
-| Docker Compose | Container orchestration |
-| ts-node-dev    | Development runtime     |
-| Axios          | Service communication   |
+### Product Service
 
----
+Responsible for managing product catalogue data.
 
-# Services
+Responsibilities:
 
-## Product Service
-
-Responsible for:
-
-- Product catalogue
-- Product metadata
-- Product retrieval
-
-### Endpoints
-
-```http
-GET    /products
-GET    /products/:id
-POST   /products
-PATCH  /products/:id
-DELETE /products/:id
-```
+- Create products
+- List products
+- Retrieve product by ID
+- Update product stock field
+- Delete products
+- Persist products in PostgreSQL
 
 Runs on:
 
 ```txt
-localhost:3001
+http://localhost:3001
+```
+
+---
+
+### Inventory Service
+
+Responsible for stock availability and reservation state.
+
+Responsibilities:
+
+- Create inventory records
+- Retrieve inventory by product ID
+- Reserve stock
+- Release reserved stock
+- Confirm reserved stock during checkout
+- Persist inventory state in PostgreSQL
+- Consume inventory events from RabbitMQ
+- Publish stock reservation result events
+
+Runs on:
+
+```txt
+http://localhost:3003
+```
+
+---
+
+### Cart Service
+
+Responsible for customer cart lifecycle.
+
+Responsibilities:
+
+- Create carts
+- Retrieve carts
+- Add items to carts
+- Track item reservation status
+- Checkout carts
+- Publish checkout events
+- Persist carts and cart items in PostgreSQL
+
+Runs on:
+
+```txt
+http://localhost:3002
+```
+
+---
+
+### Order Service
+
+Responsible for creating orders after successful checkout.
+
+Responsibilities:
+
+- Consume checkout completed events from RabbitMQ
+- Create orders
+- Store order items
+- Retrieve persisted orders
+- Persist orders and order items in PostgreSQL
+
+Runs on:
+
+```txt
+http://localhost:3004
+```
+
+---
+
+## Event-Driven Flow
+
+### Add Item to Cart
+
+```txt
+Cart Service
+   ↓ publishes RESERVE_STOCK
+RabbitMQ inventory_queue
+   ↓ consumed by
+Inventory Service
+   ↓ publishes STOCK_RESERVED or STOCK_FAILED
+RabbitMQ cart_queue
+   ↓ consumed by
+Cart Service
+   ↓ updates cart item status
+```
+
+### Checkout Flow
+
+```txt
+Cart Service
+   ↓ confirms reserved stock
+Inventory Service
+   ↓ cart marked CHECKED_OUT
+Cart Service
+   ↓ publishes CHECKOUT_COMPLETED
+RabbitMQ order_queue
+   ↓ consumed by
+Order Service
+   ↓ order persisted in PostgreSQL
+```
+
+---
+
+## Tech Stack
+
+- Node.js
+- TypeScript
+- Express
+- RabbitMQ
+- PostgreSQL
+- Docker
+- Docker Compose
+- pg
+- amqplib
+- ts-node-dev
+
+---
+
+## Project Structure
+
+```txt
+node-microservices-retail/
+├── docker-compose.yml
+├── services/
+│   ├── product-service/
+│   ├── inventory-service/
+│   ├── cart-service/
+│   └── order-service/
+```
+
+Each service follows a similar internal structure:
+
+```txt
+src/
+├── db/
+├── models/
+├── repository/
+├── routes/
+├── services/
+└── index.ts
+```
+
+Some services also include:
+
+```txt
+events/
+clients/
+```
+
+---
+
+## Running the Application
+
+From the project root:
+
+```bash
+docker compose up --build
+```
+
+Or detached mode:
+
+```bash
+docker compose up -d --build
+```
+
+Check running containers:
+
+```bash
+docker ps
+```
+
+Expected containers:
+
+```txt
+product-service
+inventory-service
+cart-service
+order-service
+postgres
+rabbitmq
+```
+
+---
+
+## Service URLs
+
+| Service | URL |
+|---|---|
+| Product Service | `http://localhost:3001` |
+| Cart Service | `http://localhost:3002` |
+| Inventory Service | `http://localhost:3003` |
+| Order Service | `http://localhost:3004` |
+| RabbitMQ Management UI | `http://localhost:15672` |
+| PostgreSQL | `localhost:5432` |
+
+RabbitMQ default login:
+
+```txt
+Username: guest
+Password: guest
+```
+
+---
+
+## Database
+
+The project uses PostgreSQL through Docker Compose.
+
+The database container is named:
+
+```txt
+postgres
+```
+
+Services connect to PostgreSQL using Docker networking:
+
+```txt
+postgres:5432
+```
+
+Example connection string:
+
+```txt
+postgresql://postgres:password@postgres:5432/db
+```
+
+---
+
+## Database Tables
+
+| Service | Tables |
+|---|---|
+| Product Service | `products` |
+| Inventory Service | `inventory` |
+| Cart Service | `carts`, `cart_items` |
+| Order Service | `orders`, `order_items` |
+
+---
+
+## API Endpoints
+
+## Product Service
+
+Base URL:
+
+```txt
+http://localhost:3001
+```
+
+### Create Product
+
+```http
+POST /products
+```
+
+Example body:
+
+```json
+{
+  "name": "Dried Lavender Bouquet",
+  "price": 24.99,
+  "stock": 10
+}
+```
+
+### Get Products
+
+```http
+GET /products
+```
+
+### Get Product by ID
+
+```http
+GET /products/:id
+```
+
+### Update Product Stock
+
+```http
+PATCH /products/:id
+```
+
+Example body:
+
+```json
+{
+  "stock": 20
+}
+```
+
+### Delete Product
+
+```http
+DELETE /products/:id
 ```
 
 ---
 
 ## Inventory Service
 
-Responsible for:
-
-- Stock reservation
-- Stock release
-- Reservation confirmation
-- Inventory lifecycle
-
-### Endpoints
-
-```http
-POST  /inventory
-GET   /inventory/:productId
-PATCH /inventory/:productId/reserve
-PATCH /inventory/:productId/release
-PATCH /inventory/:productId/confirm
-```
-
-Runs on:
+Base URL:
 
 ```txt
-localhost:3003
+http://localhost:3003
 ```
 
----
-
-## Cart Service
-
-Responsible for:
-
-- Cart creation
-- Cart management
-- Checkout orchestration
-- Saga compensation handling
-- Event publication
-
-### Endpoints
-
-```http
-POST   /carts
-GET    /carts
-GET    /carts/:id
-POST   /carts/:id/items
-PATCH  /carts/:id/items/:productId
-DELETE /carts/:id/items/:productId
-POST   /carts/:id/checkout
-DELETE /carts/:id
-```
-
-Runs on:
-
-```txt
-localhost:3002
-```
-
----
-
-# Event-Driven Workflow
-
-## Add Item Flow
-
-```txt
-1. Cart Service receives add-item request
-2. Cart Service publishes RESERVE_STOCK event
-3. Inventory Service consumes event
-4. Inventory reserves stock
-5. Inventory publishes:
-   - STOCK_RESERVED
-   OR
-   - STOCK_FAILED
-6. Cart Service updates item status
-```
-
----
-
-# Saga Pattern
-
-The checkout flow uses a Saga-style distributed transaction pattern.
-
-## Goal
-
-Prevent inconsistent stock state during distributed failures.
-
-## Flow
-
-```txt
-Checkout Started
-   ↓
-Inventory Confirmed
-   ↓
-Failure Occurs
-   ↓
-Compensation Triggered
-   ↓
-Reserved Stock Released
-```
-
-This ensures:
-
-- No permanent stock leakage
-- Rollback capability
-- Distributed consistency
-
----
-
-# Event Types
-
-## Inventory Events
-
-```txt
-RESERVE_STOCK
-RELEASE_STOCK
-```
-
-## Cart Events
-
-```txt
-STOCK_RESERVED
-STOCK_FAILED
-```
-
----
-
-# Cart Item State Transitions
-
-```txt
-PENDING
-   ↓
-RESERVED
-   ↓
-CHECKED_OUT
-```
-
-Failure path:
-
-```txt
-PENDING
-   ↓
-FAILED
-```
-
----
-
-# Running the Platform
-
-## Prerequisites
-
-- Docker Desktop
-- Node.js 20+
-
----
-
-## Start all services
-
-From project root:
-
-```powershell
-cd C:\Users\rosem\projects\node-microservices-retail
-```
-
-Run:
-
-```powershell
-docker compose up --build
-```
-
----
-
-# RabbitMQ Management UI
-
-```txt
-http://localhost:15672
-```
-
-Credentials:
-
-```txt
-guest / guest
-```
-
----
-
-# Example Workflow
-
-## 1. Create product
-
-```http
-POST /products
-```
-
-```json
-{
-  "name": "MacBook Pro",
-  "price": 2000,
-  "stock": 5
-}
-```
-
----
-
-## 2. Create inventory
+### Create Inventory
 
 ```http
 POST /inventory
 ```
 
+Example body:
+
 ```json
 {
-  "productId": "<product-id>",
-  "quantity": 5
+  "productId": "product-id-here",
+  "quantity": 10
 }
 ```
 
----
-
-## 3. Create cart
+### Get Inventory by Product ID
 
 ```http
-POST /carts
+GET /inventory/:productId
 ```
 
----
-
-## 4. Add item
+### Reserve Stock
 
 ```http
-POST /carts/:id/items
+PATCH /inventory/:productId/reserve
 ```
+
+Example body:
 
 ```json
 {
-  "productId": "<product-id>",
+  "quantity": 2
+}
+```
+
+### Release Stock
+
+```http
+PATCH /inventory/:productId/release
+```
+
+Example body:
+
+```json
+{
+  "quantity": 2
+}
+```
+
+### Confirm Stock
+
+```http
+PATCH /inventory/:productId/confirm
+```
+
+Example body:
+
+```json
+{
   "quantity": 2
 }
 ```
 
 ---
 
-## 5. Checkout
+## Cart Service
 
-```http
-POST /carts/:id/checkout
-```
-
----
-
-# Key Engineering Concepts Demonstrated
-
-- Distributed systems
-- Event-driven architecture
-- Service choreography
-- Saga pattern
-- Eventual consistency
-- Asynchronous messaging
-- Docker networking
-- Microservices boundaries
-- Compensation transactions
-- RabbitMQ queues
-
----
-
-# Future Improvements
-
-Potential extensions:
-
-- Order Service
-- Notification Service
-- PostgreSQL persistence
-- Retry strategies
-- Dead Letter Queues (DLQ)
-- Idempotency handling
-- API Gateway
-- Authentication / Authorization
-- Kubernetes deployment
-- Observability (Prometheus/Grafana)
-- CI/CD pipeline
-
----
-
-# Project Structure
+Base URL:
 
 ```txt
-node-microservices-retail/
-│
-├── docker-compose.yml
-│
-├── services/
-│   ├── product-service/
-│   ├── inventory-service/
-│   └── cart-service/
-│
-└── README.md
+http://localhost:3002
+```
+
+### Create Cart
+
+```http
+POST /carts
+```
+
+### Get Cart
+
+```http
+GET /carts/:cartId
+```
+
+### Add Item to Cart
+
+```http
+POST /carts/:cartId/items
+```
+
+Example body:
+
+```json
+{
+  "productId": "product-id-here",
+  "quantity": 2
+}
+```
+
+### Checkout Cart
+
+```http
+POST /carts/:cartId/checkout
 ```
 
 ---
 
-# Design Notes
+## Order Service
 
-## Why Inventory was separated from Product
+Base URL:
 
-Inventory management was intentionally extracted into its own service to:
+```txt
+http://localhost:3004
+```
 
-- Decouple stock lifecycle from product metadata
-- Enable independent scaling
-- Support future warehouse strategies
-- Demonstrate bounded contexts
+### Get Orders
 
----
-
-## Why RabbitMQ was introduced
-
-RabbitMQ enables:
-
-- Loose coupling
-- Async processing
-- Independent service evolution
-- Event choreography
-- Failure isolation
+```http
+GET /orders
+```
 
 ---
 
-# Author Notes
+## Manual Test Flow
 
-This project was intentionally designed as a learning-focused distributed system implementation to explore modern backend engineering concepts beyond CRUD APIs.
+### 1. Create a Product
+
+```http
+POST http://localhost:3001/products
+```
+
+```json
+{
+  "name": "Dried Lavender Bouquet",
+  "price": 24.99,
+  "stock": 10
+}
+```
+
+Copy the returned product ID.
+
+### 2. Create Inventory
+
+```http
+POST http://localhost:3003/inventory
+```
+
+```json
+{
+  "productId": "paste-product-id-here",
+  "quantity": 10
+}
+```
+
+### 3. Create Cart
+
+```http
+POST http://localhost:3002/carts
+```
+
+Copy the returned cart ID.
+
+### 4. Add Item to Cart
+
+```http
+POST http://localhost:3002/carts/paste-cart-id-here/items
+```
+
+```json
+{
+  "productId": "paste-product-id-here",
+  "quantity": 2
+}
+```
+
+The cart item is first added as:
+
+```txt
+PENDING
+```
+
+After Inventory Service processes the event, it should become:
+
+```txt
+RESERVED
+```
+
+### 5. Get Cart
+
+```http
+GET http://localhost:3002/carts/paste-cart-id-here
+```
+
+Expected item status:
+
+```txt
+RESERVED
+```
+
+### 6. Checkout
+
+```http
+POST http://localhost:3002/carts/paste-cart-id-here/checkout
+```
+
+The cart should become:
+
+```txt
+CHECKED_OUT
+```
+
+### 7. Get Orders
+
+```http
+GET http://localhost:3004/orders
+```
+
+Expected result:
+
+```txt
+Order created and persisted
+```
+
+---
+
+## Persistence Test
+
+To confirm persistence, create product, inventory, cart, and order data.
+
+Then restart services:
+
+```bash
+docker compose restart product-service
+docker compose restart inventory-service
+docker compose restart cart-service
+docker compose restart order-service
+```
+
+Then call:
+
+```http
+GET http://localhost:3001/products
+GET http://localhost:3003/inventory/:productId
+GET http://localhost:3002/carts/:cartId
+GET http://localhost:3004/orders
+```
+
+Expected result:
+
+```txt
+Data should still be available after restart.
+```
+
+---
+
+## Useful Docker Commands
+
+### Start all services
+
+```bash
+docker compose up --build
+```
+
+### Start in detached mode
+
+```bash
+docker compose up -d --build
+```
+
+### Stop services
+
+```bash
+docker compose stop
+```
+
+### Restart one service
+
+```bash
+docker compose restart cart-service
+```
+
+### Rebuild one service
+
+```bash
+docker compose up -d --build --force-recreate cart-service
+```
+
+### View logs
+
+```bash
+docker compose logs -f cart-service
+```
+
+### Check environment variable inside container
+
+```bash
+docker compose exec product-service printenv DATABASE_URL
+```
+
+### Connect to PostgreSQL
+
+```bash
+docker exec -it postgres psql -U postgres -d db
+```
+
+---
+
+## Key Design Decisions
+
+### 1. Microservice Separation
+
+Each service owns a specific business capability:
+
+```txt
+Products
+Inventory
+Carts
+Orders
+```
+
+This keeps responsibilities clear and makes each service easier to reason about.
+
+### 2. Event-Driven Inventory Reservation
+
+Adding an item to the cart does not directly mutate cart state to reserved.
+
+Instead:
+
+```txt
+Cart Service publishes RESERVE_STOCK
+Inventory Service processes reservation
+Cart Service receives reservation result
+Cart item status changes to RESERVED or FAILED
+```
+
+This models asynchronous distributed system behaviour.
+
+### 3. PostgreSQL Persistence
+
+Each service persists its own state to PostgreSQL.
+
+This ensures data survives service restarts and moves the project beyond in-memory demo storage.
+
+### 4. Docker Compose Networking
+
+Services communicate using Docker service names:
+
+```txt
+rabbitmq
+postgres
+inventory-service
+product-service
+cart-service
+order-service
+```
+
+Inside Docker, services should not use:
+
+```txt
+localhost
+```
+
+because `localhost` means the container itself.
+
+### 5. Repository Pattern
+
+Database logic is isolated inside repository classes.
+
+This keeps route and service layers cleaner:
+
+```txt
+Route → Service → Repository → PostgreSQL
+```
+
+---
+
+## Current Limitations
+
+This project is intentionally focused on backend architecture and distributed systems concepts.
+
+Current limitations:
+
+- No authentication or authorization
+- No frontend
+- No payment integration
+- No production deployment
+- No database migration tool
+- No centralized logging
+- No distributed tracing
+- No automated integration test suite yet
+- No retry/dead-letter queue strategy yet
+
+---
+
+## Possible Future Improvements
+
+- Add health check endpoints for all services
+- Add database migrations
+- Add idempotency for checkout/order creation
+- Add dead-letter queues for failed events
+- Add integration tests
+- Add OpenAPI/Swagger documentation
+- Add structured logging
+- Add observability with metrics/tracing
+- Add authentication
+- Split PostgreSQL databases per service
+- Add CI pipeline
+
+---
+
+## Summary
+
+This project demonstrates a local microservices retail backend with:
+
+- Multiple independently running services
+- RabbitMQ-based asynchronous messaging
+- PostgreSQL persistence
+- Docker Compose orchestration
+- Product, inventory, cart, and order workflows
+- Data persistence across restarts
+
+It is designed as a practical learning and portfolio project for backend engineering, microservices, and distributed systems.
