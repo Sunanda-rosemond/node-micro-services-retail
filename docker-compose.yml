@@ -36,8 +36,12 @@ services:
     volumes:
       - ./services/inventory-service:/app
       - /app/node_modules
+    environment:
+      DATABASE_URL: postgresql://postgres:password@postgres:5432/db
     depends_on:
       rabbitmq:
+        condition: service_healthy
+      postgres:
         condition: service_healthy
 
   cart-service:

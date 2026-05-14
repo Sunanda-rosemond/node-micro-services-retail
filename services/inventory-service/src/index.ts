@@ -10,6 +10,7 @@ app.use(express.json());
 
 async function bootstrap() {
   const repository = new InventoryRepository();
+  await repository.init();
   const service = new InventoryService(repository);
 
   const publisher = new EventPublisher();

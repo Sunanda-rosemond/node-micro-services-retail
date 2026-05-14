@@ -3,16 +3,16 @@ import { InventoryRepository } from '../repository/inventory.repository';
 export class InventoryService {
   constructor(private repo: InventoryRepository) {}
 
-  create(productId: string, quantity: number) {
-    return this.repo.save({
+  async create(productId: string, quantity: number) {
+    return await this.repo.save({
       productId,
       available: quantity,
       reserved: 0,
     });
   }
 
-  get(productId: string) {
-    const item = this.repo.findByProduct(productId);
+  async get(productId: string) {
+    const item = await this.repo.findByProduct(productId);
 
     if (!item) {
       throw new Error('Inventory not found');
@@ -21,8 +21,8 @@ export class InventoryService {
     return item;
   }
 
-  reserve(productId: string, quantity: number) {
-    const item = this.get(productId);
+  async reserve(productId: string, quantity: number) {
+    const item = await this.get(productId);
 
     if (item.available < quantity) {
       throw new Error('Insufficient stock');
@@ -34,16 +34,16 @@ export class InventoryService {
     return this.repo.save(item);
   }
 
-  release(productId: string, quantity: number) {
-    const item = this.get(productId);
+  async release(productId: string, quantity: number) {
+    const item = await this.get(productId);
 
     item.available += quantity;
     item.reserved -= quantity;
 
     return this.repo.save(item);
   }
-  confirm(productId: string, quantity: number) {
-    const item = this.get(productId);
+  async confirm(productId: string, quantity: number) {
+    const item = await this.get(productId);
 
     // 👇 TEMPORARY TEST CONDITION
     // if (productId === 'test-fail') {
@@ -57,6 +57,6 @@ export class InventoryService {
     item.reserved -= quantity;
     // available already reduced during reserve
 
-    return this.repo.save(item);
+    return await this.repo.save(item);
   }
 }

@@ -37,7 +37,7 @@ export class EventConsumer {
 
       try {
         if (event.type === 'RESERVE_STOCK') {
-          this.service.reserve(event.productId, event.quantity);
+          await this.service.reserve(event.productId, event.quantity);
 
           await this.eventPublisher.publish({
             type: 'STOCK_RESERVED',
@@ -47,7 +47,7 @@ export class EventConsumer {
         }
 
         if (event.type === 'RELEASE_STOCK') {
-          this.service.release(event.productId, event.quantity);
+          await this.service.release(event.productId, event.quantity);
         }
 
         channel.ack(msg);
