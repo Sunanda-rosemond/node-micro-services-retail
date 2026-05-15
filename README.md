@@ -22,6 +22,11 @@ The project demonstrates core backend and distributed systems concepts including
 - Service-to-service communication
 - Inventory reservation flow
 - Checkout workflow
+- Health checks
+- Database connectivity checks
+- RabbitMQ connectivity checks
+- Idempotent order creation
+- Duplicate event handling
 - Data persistence across service restarts
 
 ---
@@ -32,8 +37,8 @@ The platform is split into four main services:
 
 ```txt
 Product Service
-Inventory Service
 Cart Service
+Inventory Service
 Order Service
 ```
 
@@ -61,11 +66,37 @@ Responsibilities:
 - Update product stock field
 - Delete products
 - Persist products in PostgreSQL
+- Expose service/database health status
 
 Runs on:
 
 ```txt
 http://localhost:3001
+```
+
+---
+
+### Cart Service
+
+Responsible for customer cart lifecycle.
+
+Responsibilities:
+
+- Create carts
+- Retrieve carts
+- Add items to carts
+- Track item reservation status
+- Checkout carts
+- Publish inventory reservation events
+- Consume inventory reservation result events
+- Publish checkout completed events
+- Persist carts and cart items in PostgreSQL
+- Expose service/database/RabbitMQ health status
+
+Runs on:
+
+```txt
+http://localhost:3002
 ```
 
 ---
@@ -84,33 +115,12 @@ Responsibilities:
 - Persist inventory state in PostgreSQL
 - Consume inventory events from RabbitMQ
 - Publish stock reservation result events
+- Expose service/database/RabbitMQ health status
 
 Runs on:
 
 ```txt
 http://localhost:3003
-```
-
----
-
-### Cart Service
-
-Responsible for customer cart lifecycle.
-
-Responsibilities:
-
-- Create carts
-- Retrieve carts
-- Add items to carts
-- Track item reservation status
-- Checkout carts
-- Publish checkout events
-- Persist carts and cart items in PostgreSQL
-
-Runs on:
-
-```txt
-http://localhost:3002
 ```
 
 ---
@@ -125,7 +135,9 @@ Responsibilities:
 - Create orders
 - Store order items
 - Retrieve persisted orders
+- Prevent duplicate orders for the same cart
 - Persist orders and order items in PostgreSQL
+- Expose service/database/RabbitMQ health status
 
 Runs on:
 
@@ -169,6 +181,75 @@ Order Service
 
 ---
 
+## Idempotent Order Creation
+
+The Order Service is designed to handle duplicate checkout events safely.
+
+RabbitMQ can deliver messages more than once in real-world distributed systems. To prevent duplicate orders, the Order Service enforces one order per cart.
+
+This is handled by:
+
+- Checking for an existing order by `cartId`
+- Adding a unique database constraint/index on `cart_id`
+- Returning the existing order when a duplicate checkout event is received
+- Handling PostgreSQL unique constraint violations safely
+
+This means if the same `CHECKOUT_COMPLETED` event is received multiple times:
+
+```txt
+First event      → creates order
+Duplicate event  → returns existing order
+Duplicate event  → returns existing order
+```
+
+Expected result:
+
+```txt
+Only one order exists for the same cartId
+```
+
+---
+
+## Health Checks
+
+Each service exposes a health endpoint:
+
+```http
+GET /health
+```
+
+Example response:
+
+```json
+{
+  "service": "cart-service",
+  "status": "ok",
+  "database": "connected",
+  "rabbitmq": "ok",
+  "uptime": 42.12,
+  "timestamp": "2026-05-15T20:00:00.000Z"
+}
+```
+
+Health checks include:
+
+- Service availability
+- PostgreSQL connectivity
+- RabbitMQ connectivity where applicable
+- Process uptime
+- Timestamp
+
+### Health Check URLs
+
+```http
+GET http://localhost:3001/health
+GET http://localhost:3002/health
+GET http://localhost:3003/health
+GET http://localhost:3004/health
+```
+
+---
+
 ## Tech Stack
 
 - Node.js
@@ -191,8 +272,8 @@ node-microservices-retail/
 ├── docker-compose.yml
 ├── services/
 │   ├── product-service/
-│   ├── inventory-service/
 │   ├── cart-service/
+│   ├── inventory-service/
 │   └── order-service/
 ```
 
@@ -241,8 +322,8 @@ Expected containers:
 
 ```txt
 product-service
-inventory-service
 cart-service
+inventory-service
 order-service
 postgres
 rabbitmq
@@ -363,6 +444,61 @@ Example body:
 DELETE /products/:id
 ```
 
+### Health Check
+
+```http
+GET /health
+```
+
+---
+
+## Cart Service
+
+Base URL:
+
+```txt
+http://localhost:3002
+```
+
+### Create Cart
+
+```http
+POST /carts
+```
+
+### Get Cart
+
+```http
+GET /carts/:cartId
+```
+
+### Add Item to Cart
+
+```http
+POST /carts/:cartId/items
+```
+
+Example body:
+
+```json
+{
+  "productId": "product-id-here",
+  "quantity": 2
+}
+```
+
+### Checkout Cart
+
+```http
+POST /carts/:cartId/checkout
+```
+
+### Health Check
+
+```http
+GET /health
+```
+
 ---
 
 ## Inventory Service
@@ -436,47 +572,10 @@ Example body:
 }
 ```
 
----
-
-## Cart Service
-
-Base URL:
-
-```txt
-http://localhost:3002
-```
-
-### Create Cart
+### Health Check
 
 ```http
-POST /carts
-```
-
-### Get Cart
-
-```http
-GET /carts/:cartId
-```
-
-### Add Item to Cart
-
-```http
-POST /carts/:cartId/items
-```
-
-Example body:
-
-```json
-{
-  "productId": "product-id-here",
-  "quantity": 2
-}
-```
-
-### Checkout Cart
-
-```http
-POST /carts/:cartId/checkout
+GET /health
 ```
 
 ---
@@ -493,6 +592,12 @@ http://localhost:3004
 
 ```http
 GET /orders
+```
+
+### Health Check
+
+```http
+GET /health
 ```
 
 ---
@@ -599,6 +704,52 @@ Order created and persisted
 
 ---
 
+## Idempotency Test
+
+To test duplicate checkout event handling:
+
+1. Complete a normal checkout flow.
+2. Open RabbitMQ Management UI:
+
+```txt
+http://localhost:15672
+```
+
+3. Go to:
+
+```txt
+Queues and Streams → order_queue → Publish message
+```
+
+4. Publish the same checkout event more than once:
+
+```json
+{
+  "type": "CHECKOUT_COMPLETED",
+  "cartId": "existing-cart-id",
+  "items": [
+    {
+      "productId": "existing-product-id",
+      "quantity": 2
+    }
+  ]
+}
+```
+
+5. Call:
+
+```http
+GET http://localhost:3004/orders
+```
+
+Expected result:
+
+```txt
+Only one order should exist for the same cartId.
+```
+
+---
+
 ## Persistence Test
 
 To confirm persistence, create product, inventory, cart, and order data.
@@ -679,6 +830,18 @@ docker compose exec product-service printenv DATABASE_URL
 docker exec -it postgres psql -U postgres -d db
 ```
 
+### Connect to order database
+
+```bash
+docker exec -it postgres psql -U postgres -d retail_orders
+```
+
+### Inspect orders table
+
+```sql
+\d orders
+```
+
 ---
 
 ## Key Design Decisions
@@ -689,8 +852,8 @@ Each service owns a specific business capability:
 
 ```txt
 Products
-Inventory
 Carts
+Inventory
 Orders
 ```
 
@@ -748,6 +911,16 @@ This keeps route and service layers cleaner:
 Route → Service → Repository → PostgreSQL
 ```
 
+### 6. Idempotency at the Order Boundary
+
+The Order Service protects against duplicate order creation by enforcing uniqueness on `cart_id`.
+
+This is important because event-driven systems may deliver the same message more than once.
+
+### 7. Health Checks
+
+Each service exposes a `/health` endpoint to make local debugging and operational visibility easier.
+
 ---
 
 ## Current Limitations
@@ -760,7 +933,7 @@ Current limitations:
 - No frontend
 - No payment integration
 - No production deployment
-- No database migration tool
+- No formal database migration tool
 - No centralized logging
 - No distributed tracing
 - No automated integration test suite yet
@@ -770,9 +943,7 @@ Current limitations:
 
 ## Possible Future Improvements
 
-- Add health check endpoints for all services
-- Add database migrations
-- Add idempotency for checkout/order creation
+- Add database migration tooling
 - Add dead-letter queues for failed events
 - Add integration tests
 - Add OpenAPI/Swagger documentation
@@ -781,6 +952,9 @@ Current limitations:
 - Add authentication
 - Split PostgreSQL databases per service
 - Add CI pipeline
+- Add automated end-to-end test flow
+- Add message correlation IDs
+- Add event versioning
 
 ---
 
@@ -792,7 +966,12 @@ This project demonstrates a local microservices retail backend with:
 - RabbitMQ-based asynchronous messaging
 - PostgreSQL persistence
 - Docker Compose orchestration
-- Product, inventory, cart, and order workflows
+- Product, cart, inventory, and order workflows
+- Health checks
+- Database connectivity checks
+- RabbitMQ connectivity checks
+- Idempotent order creation
+- Duplicate event handling
 - Data persistence across restarts
 
 It is designed as a practical learning and portfolio project for backend engineering, microservices, and distributed systems.
