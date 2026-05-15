@@ -3,6 +3,10 @@ import amqp from 'amqplib';
 export class EventPublisher {
   private channel: any;
 
+  isConnected(): boolean {
+    return !!this.channel;
+  }
+
   async connect() {
     const connectWithRetry = async () => {
       let retries = 30;

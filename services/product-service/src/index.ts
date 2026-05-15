@@ -2,6 +2,8 @@ import express from 'express';
 import { ProductRoutes } from './routes/product.routes';
 import { ProductService } from './services/product.service';
 import { ProductRepository } from './repository/product.repository';
+import { pool } from './db/pool';
+
 var colors = require('colors/safe');
 
 const app = express();
@@ -16,6 +18,26 @@ async function bootstrap() {
 
   const PORT = 3001;
 
+  app.get('/health', async (req, res) => {
+    try {
+      await pool.query('SELECT 1');
+      res.json({
+        service: 'product-service',
+        status: 'ok',
+        database: 'connected',
+        uptime: process.uptime(),
+        timestamp: new Date().toISOString(),
+      });
+    } catch {
+      res.status(500).json({
+        service: 'product-service',
+        status: 'degraded',
+        database: 'error',
+        uptime: process.uptime(),
+        timestamp: new Date().toISOString(),
+      });
+    }
+  });
   app.use('/products', routes.router);
   app.listen(PORT, () => {
     console.log(colors.green(`Server is running on port ${PORT}`));

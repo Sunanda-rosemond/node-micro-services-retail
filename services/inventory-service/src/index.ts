@@ -4,6 +4,7 @@ import { InventoryService } from './services/inventory.service';
 import { InventoryRoutes } from './routes/inventory.routes';
 import { EventConsumer } from './events/consumer';
 import { EventPublisher } from './events/publisher';
+import { pool } from './db/pool';
 
 const app = express();
 app.use(express.json());
@@ -20,6 +21,29 @@ async function bootstrap() {
   await consumer.start();
 
   const routes = new InventoryRoutes(service);
+  app.get('/health', async (req, res) => {
+    try {
+      await pool.query('SELECT 1');
+
+      res.json({
+        service: 'inventory-service',
+        status: 'ok',
+        database: 'connected',
+        rabbitmq: publisher.isConnected() ? 'ok' : 'error',
+        uptime: process.uptime(),
+        timestamp: new Date().toISOString(),
+      });
+    } catch {
+      res.status(500).json({
+        service: 'inventory-service',
+        status: 'degraded',
+        database: 'error',
+        rabbitmq: publisher.isConnected() ? 'ok' : 'error',
+        uptime: process.uptime(),
+        timestamp: new Date().toISOString(),
+      });
+    }
+  });
   app.use('/inventory', routes.router);
 
   app.listen(3003, () => {

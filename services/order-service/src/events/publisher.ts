@@ -18,7 +18,9 @@ async function connectWithRetry() {
 
 export class EventPublisher {
   private channel: any;
-
+  isConnected(): boolean {
+    return !!this.channel;
+  }
   async connect() {
     const connection = await connectWithRetry();
     this.channel = await connection.createChannel();

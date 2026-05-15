@@ -2,6 +2,9 @@ import amqp from 'amqplib';
 
 export class EventPublisher {
   private channel: any;
+  isConnected(): boolean {
+    return !!this.channel;
+  }
 
   async connect() {
     async function connectWithRetry() {
@@ -24,6 +27,12 @@ export class EventPublisher {
 
     await this.channel.assertQueue('inventory_queue');
     await this.channel.assertQueue('order_queue');
+  }
+
+  async publish(event: any, queue: string) {
+    if (!this.channel) {
+      throw new Error('RabbitMQ channel is not initialized');
+    }
   }
 
   async publishToInventory(event: any) {
