@@ -19,6 +19,7 @@ async function bootstrap() {
   const service = new CartService(repo, inventoryClient, eventPublisher);
   const eventConsumer = new EventConsumer(service);
   await eventConsumer.start();
+  console.log('cart event consumer started');
 
   const routes = new CartRoutes(service);
   app.get('/health', async (req, res) => {
@@ -51,4 +52,7 @@ async function bootstrap() {
     console.log(`Cart Service running on port ${PORT}`);
   });
 }
-bootstrap();
+bootstrap().catch((err) => {
+  console.error('Failed to start Cart Service:', err);
+  process.exit(1);
+});

@@ -2,6 +2,7 @@ import amqp from 'amqplib';
 import { CartService } from '../services/cart.service';
 
 export class EventConsumer {
+  private channel: any;
   constructor(private service: CartService) {}
 
   async start() {
@@ -23,6 +24,7 @@ export class EventConsumer {
     };
     const connection = await connectWithRetry();
     const channel = await connection.createChannel();
+    this.channel = channel;
 
     await channel.assertQueue('cart_queue');
 
@@ -30,7 +32,7 @@ export class EventConsumer {
       if (!msg) return;
 
       const event = JSON.parse(msg.content.toString());
-
+      console.log('Cart event received:', event);
       try {
         if (event.type === 'STOCK_RESERVED') {
           await this.service.markItemReserved(event.productId);
@@ -43,8 +45,11 @@ export class EventConsumer {
         channel.ack(msg);
       } catch (err) {
         console.error(err);
-        channel.nack(msg);
+        channel.ack(msg);
       }
     });
+  }
+  isConnected(): boolean {
+    return !!this.channel;
   }
 }

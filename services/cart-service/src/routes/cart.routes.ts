@@ -84,7 +84,10 @@ export class CartRoutes {
         const cart = await this.service.checkout(req.params.id);
         res.json(cart);
       } catch (e) {
-        res.status(400).json({ msg: 'Checkout failed' });
+        console.log('checkout error', e);
+        res
+          .status(400)
+          .json({ msg: e instanceof Error ? e.message : 'Checkout failed' });
       }
     });
   }

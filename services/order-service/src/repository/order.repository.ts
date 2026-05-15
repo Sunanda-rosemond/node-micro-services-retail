@@ -23,11 +23,15 @@ export class OrderRepository {
     await pool.query(`
       CREATE TABLE IF NOT EXISTS orders (
         id TEXT PRIMARY KEY,
-        cart_id TEXT NOT NULL,
+        cart_id TEXT NOT NULL UNIQUE,
         status TEXT NOT NULL,
         created_at TIMESTAMP NOT NULL
       )
     `);
+    await pool.query(`
+  CREATE UNIQUE INDEX IF NOT EXISTS idx_orders_cart_id
+  ON orders(cart_id);
+`);
     await pool.query(`
       CREATE TABLE IF NOT EXISTS order_items (
         id SERIAL PRIMARY KEY,
@@ -92,7 +96,7 @@ export class OrderRepository {
       FROM order_items
       WHERE order_id = $1
       `,
-      [id],
+      [row.id],
     );
 
     return {
@@ -107,13 +111,31 @@ export class OrderRepository {
     };
   }
   async create(order: Order): Promise<Order> {
-    await pool.query(
-      `
+    const existingOrder = await this.findById(order.cartId);
+
+    if (existingOrder) {
+      console.log('Order already exists for cartId: ', order.cartId);
+      return existingOrder;
+    }
+    try {
+      await pool.query(
+        `
       INSERT INTO orders (id, cart_id, status, created_at)
       VALUES ($1, $2, $3, $4)
       `,
-      [order.id, order.cartId, order.status, order.createdAt],
-    );
+        [order.id, order.cartId, order.status, order.createdAt],
+      );
+    } catch (err: any) {
+      if (err.code === '23505') {
+        const existingOrder = await this.findById(order.cartId);
+
+        if (existingOrder) {
+          return existingOrder;
+        }
+      }
+
+      throw err;
+    }
 
     for (const item of order.items) {
       await pool.query(

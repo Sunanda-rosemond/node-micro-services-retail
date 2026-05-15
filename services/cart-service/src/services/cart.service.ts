@@ -164,10 +164,6 @@ export class CartService {
       throw new Error('Failed to update cart');
     }
 
-    // console.log('Publishing CHECKOUT_COMPLETED', {
-    //   cartId: updatedCart.id,
-    //   items: updatedCart.items,
-    // });
     await this.eventPublisher.publishToOrder({
       type: 'CHECKOUT_COMPLETED',
       cartId: updatedCart.id,
