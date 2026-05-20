@@ -26,14 +26,47 @@ export class EventConsumer {
     const channel = await connection.createChannel();
     this.channel = channel;
 
-    await channel.assertQueue('cart_queue');
+    await channel.assertExchange('cart_dlx', 'direct', {
+      durable: true,
+    });
+
+    await channel.assertQueue('cart_dlq', {
+      durable: true,
+    });
+
+    await channel.bindQueue('cart_dlq', 'cart_dlx', 'cart_failed');
+
+    await channel.assertQueue('cart_queue', {
+      durable: true,
+      arguments: {
+        'x-dead-letter-exchange': 'cart_dlx',
+        'x-dead-letter-routing-key': 'cart_failed',
+      },
+    });
 
     channel.consume('cart_queue', async (msg) => {
       if (!msg) return;
 
-      const event = JSON.parse(msg.content.toString());
-      console.log('Cart event received:', event);
+      let event: any;
       try {
+        event = JSON.parse(msg.content.toString());
+      } catch (err) {
+        console.error('Invalid JSON msg:', msg.content.toString());
+        channel.reject(msg, false);
+        return;
+      }
+      try {
+        console.log('CArt event received:', event);
+        if (
+          !event.type ||
+          !event.productId ||
+          !['STOCK_RESERVED', 'STOCK_FAILED'].includes(event.type)
+        ) {
+          console.error('Invalid cart event:', event);
+          channel.reject(msg, false);
+          return;
+        }
+
         if (event.type === 'STOCK_RESERVED') {
           await this.service.markItemReserved(event.productId);
         }
@@ -44,8 +77,8 @@ export class EventConsumer {
 
         channel.ack(msg);
       } catch (err) {
-        console.error(err);
-        channel.ack(msg);
+        console.error('Error processing cart event:', err);
+        channel.reject(msg, false);
       }
     });
   }
