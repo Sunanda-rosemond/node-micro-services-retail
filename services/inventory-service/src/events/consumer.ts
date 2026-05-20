@@ -28,14 +28,44 @@ export class EventConsumer {
     const connection = await connectWithRetry();
     const channel = await connection.createChannel();
 
-    await channel.assertQueue('inventory_queue');
+    await channel.assertExchange('inventory_dlx', 'direct', {
+      durable: true,
+    });
+
+    await channel.assertQueue('inventory_dlq', {
+      durable: true,
+    });
+
+    await channel.bindQueue(
+      'inventory_dlq',
+      'inventory_dlx',
+      'inventory_failed',
+    );
+
+    await channel.assertQueue('inventory_queue', {
+      durable: true,
+      arguments: {
+        'x-dead-letter-exchange': 'inventory_dlx',
+        'x-dead-letter-routing-key': 'inventory_failed',
+      },
+    });
 
     channel.consume('inventory_queue', async (msg) => {
       if (!msg) return;
-
-      const event = JSON.parse(msg.content.toString());
-
+      let event: any;
       try {
+        event = JSON.parse(msg.content.toString());
+      } catch (err) {
+        console.error('Invalid JSON msg:', msg.content.toString());
+        channel.reject(msg, false);
+        return;
+      }
+      try {
+        if (!event.type || !event.productId || !event.quantity) {
+          console.error('Invalid inventory event:', event);
+          channel.reject(msg, false);
+          return;
+        }
         if (event.type === 'RESERVE_STOCK') {
           await this.service.reserve(event.productId, event.quantity);
 
@@ -59,11 +89,13 @@ export class EventConsumer {
             type: 'STOCK_FAILED',
             productId: event.productId,
             quantity: event.quantity,
+            reason: err instanceof Error ? err.message : 'Unknown error',
           });
         }
-
         channel.ack(msg);
+        return;
       }
+      channel.reject(msg, false);
     });
   }
 }
