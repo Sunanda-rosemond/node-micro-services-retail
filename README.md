@@ -333,14 +333,14 @@ rabbitmq
 
 ## Service URLs
 
-| Service | URL |
-|---|---|
-| Product Service | `http://localhost:3001` |
-| Cart Service | `http://localhost:3002` |
-| Inventory Service | `http://localhost:3003` |
-| Order Service | `http://localhost:3004` |
+| Service                | URL                      |
+| ---------------------- | ------------------------ |
+| Product Service        | `http://localhost:3001`  |
+| Cart Service           | `http://localhost:3002`  |
+| Inventory Service      | `http://localhost:3003`  |
+| Order Service          | `http://localhost:3004`  |
 | RabbitMQ Management UI | `http://localhost:15672` |
-| PostgreSQL | `localhost:5432` |
+| PostgreSQL             | `localhost:5432`         |
 
 RabbitMQ default login:
 
@@ -377,12 +377,12 @@ postgresql://postgres:password@postgres:5432/db
 
 ## Database Tables
 
-| Service | Tables |
-|---|---|
-| Product Service | `products` |
-| Inventory Service | `inventory` |
-| Cart Service | `carts`, `cart_items` |
-| Order Service | `orders`, `order_items` |
+| Service           | Tables                  |
+| ----------------- | ----------------------- |
+| Product Service   | `products`              |
+| Inventory Service | `inventory`             |
+| Cart Service      | `carts`, `cart_items`   |
+| Order Service     | `orders`, `order_items` |
 
 ---
 
@@ -923,38 +923,175 @@ Each service exposes a `/health` endpoint to make local debugging and operationa
 
 ---
 
-## Current Limitations
+## Dead Letter Queue Handling
 
-This project is intentionally focused on backend architecture and distributed systems concepts.
+The project uses Dead Letter Queues (DLQs) to handle invalid or unprocessable RabbitMQ messages safely.
 
-Current limitations:
+A DLQ is used when a message cannot be processed due to a technical issue, invalid format, or unexpected payload shape.
 
-- No authentication or authorization
-- No frontend
-- No payment integration
-- No production deployment
-- No formal database migration tool
-- No centralized logging
-- No distributed tracing
-- No automated integration test suite yet
-- No retry/dead-letter queue strategy yet
+Instead of retrying forever or silently losing the message, the service rejects the message and RabbitMQ routes it to a dedicated dead-letter queue.
+
+---
+
+## Dead Letter Queues
+
+| Main Queue        | Dead Letter Exchange | Dead Letter Queue | Routing Key        |
+| ----------------- | -------------------- | ----------------- | ------------------ |
+| `inventory_queue` | `inventory_dlx`      | `inventory_dlq`   | `inventory_failed` |
+| `cart_queue`      | `cart_dlx`           | `cart_dlq`        | `cart_failed`      |
+| `order_queue`     | `order_dlx`          | `order_dlq`       | `order_failed`     |
+
+---
+
+## Why DLQs Are Used
+
+RabbitMQ messages may fail for different reasons.
+
+Examples of messages that should go to a DLQ:
+
+```txt
+Invalid JSON
+Missing required fields
+Unknown event type
+Unexpected payload shape
+Unhandled technical exception
+```
+
+Examples of messages that should not go to a DLQ:
+
+```txt
+Insufficient stock
+Cart item reservation failed due to business rules
+Duplicate checkout event already handled
+```
+
+Business failures are handled as valid application outcomes.
+
+For example, if inventory is insufficient, the Inventory Service publishes a STOCK_FAILED event to the Cart Service rather than dead-lettering the message.
+
+---
+
+## Business Failure vs Technical Failure
+
+### Business Failure
+
+A business failure is an expected outcome in the domain.
+
+Example:
+
+```txt
+Customer requests 5 items
+Only 2 items are available
+Inventory cannot reserve stock
+Inventory Service publishes STOCK_FAILED
+Cart Service marks item as FAILED
+Message is acknowledged
+```
+
+This does not go to a DLQ because the system handled the scenario correctly.
+
+### Technical Failure
+
+A technical failure means the message cannot be safely processed.
+
+Example:
+
+```txt
+Message payload is not valid JSON
+Message is missing productId
+Message has an unknown event type
+Service cannot understand the event
+Message is rejected
+RabbitMQ routes it to the DLQ
+```
+
+This goes to a DLQ so it can be inspected later.
+
+## DLQ Flow
+
+### Inventory Queue
+
+```txt
+Cart Service
+   ↓ publishes RESERVE_STOCK
+inventory_queue
+   ↓ consumed by inventory-service
+invalid/unprocessable message
+   ↓ rejected with requeue=false
+inventory_dlx
+   ↓ routes using inventory_failed
+inventory_dlq
+```
+
+### Cart Queue
+
+```txt
+Inventory Service
+   ↓ publishes STOCK_RESERVED or STOCK_FAILED
+cart_queue
+   ↓ consumed by cart-service
+invalid/unprocessable message
+   ↓ rejected with requeue=false
+cart_dlx
+   ↓ routes using cart_failed
+cart_dlq
+```
+
+### Order Queue
+
+```txt
+Cart Service
+   ↓ publishes CHECKOUT_COMPLETED
+order_queue
+   ↓ consumed by order-service
+invalid/unprocessable message
+   ↓ rejected with requeue=false
+order_dlx
+   ↓ routes using order_failed
+order_dlq
+```
+
+### How DLQ Rejection works
+
+When a message is invalid, the consumer rejects it using:
+
+```txt
+channel.reject(msg, false);
+```
+
+The second argument means:
+
+```txt
+false = do not requeue the message
+```
+
+Because the queue is configured with a dead-letter exchange, RabbitMQ moves the rejected message to the configured DLQ.
+
+## Current Messaging Reliability Features
+
+The projects currently supports:
+
+- RabbitMQ acknowledgements
+- Business failure events
+- Dead Letter Queues
+- Invalid JSON handling
+- Invalid event shape handling
+- Order idempotency
+- Duplicate checkout event protection
 
 ---
 
 ## Possible Future Improvements
 
-- Add database migration tooling
-- Add dead-letter queues for failed events
-- Add integration tests
-- Add OpenAPI/Swagger documentation
-- Add structured logging
-- Add observability with metrics/tracing
-- Add authentication
-- Split PostgreSQL databases per service
-- Add CI pipeline
-- Add automated end-to-end test flow
-- Add message correlation IDs
-- Add event versioning
+- Retry queues
+- Delayed retries
+- Dead-letter message inspection endpoint
+- Correlation IDs
+- Event IDs
+- Event versioning
+- Centralized event contracts
+- Poison message alerting
+- Structured logging for rejected messages
 
 ---
 
