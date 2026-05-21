@@ -15,6 +15,7 @@ It models a simplified retail shopping flow where customers can:
 
 The project demonstrates core backend and distributed systems concepts including:
 
+- API Gateway as a single entry point
 - Microservice separation
 - Event-driven communication with RabbitMQ
 - PostgreSQL persistence
@@ -22,11 +23,6 @@ The project demonstrates core backend and distributed systems concepts including
 - Service-to-service communication
 - Inventory reservation flow
 - Checkout workflow
-- Health checks
-- Database connectivity checks
-- RabbitMQ connectivity checks
-- Idempotent order creation
-- Duplicate event handling
 - Data persistence across service restarts
 
 ---
@@ -37,8 +33,8 @@ The platform is split into four main services:
 
 ```txt
 Product Service
-Cart Service
 Inventory Service
+Cart Service
 Order Service
 ```
 
@@ -54,6 +50,36 @@ Docker Compose
 
 ## Services
 
+### API Gateway
+
+Responsible for exposing a single external entry point for the backend platform.
+
+Responsibilities:
+
+- Route external HTTP requests to internal services
+- Provide one public API base URL
+- Hide individual service ports from clients
+- Log incoming HTTP requests
+- Expose gateway health status
+- Provide a future location for authentication, rate limiting, and request validation
+
+Runs on:
+
+```txt
+http://localhost:3000
+```
+
+Gateway routes:
+
+```txt
+/api/products   → product-service
+/api/carts      → cart-service
+/api/inventory  → inventory-service
+/api/orders     → order-service
+```
+
+---
+
 ### Product Service
 
 Responsible for managing product catalogue data.
@@ -66,37 +92,11 @@ Responsibilities:
 - Update product stock field
 - Delete products
 - Persist products in PostgreSQL
-- Expose service/database health status
 
 Runs on:
 
 ```txt
 http://localhost:3001
-```
-
----
-
-### Cart Service
-
-Responsible for customer cart lifecycle.
-
-Responsibilities:
-
-- Create carts
-- Retrieve carts
-- Add items to carts
-- Track item reservation status
-- Checkout carts
-- Publish inventory reservation events
-- Consume inventory reservation result events
-- Publish checkout completed events
-- Persist carts and cart items in PostgreSQL
-- Expose service/database/RabbitMQ health status
-
-Runs on:
-
-```txt
-http://localhost:3002
 ```
 
 ---
@@ -115,12 +115,33 @@ Responsibilities:
 - Persist inventory state in PostgreSQL
 - Consume inventory events from RabbitMQ
 - Publish stock reservation result events
-- Expose service/database/RabbitMQ health status
 
 Runs on:
 
 ```txt
 http://localhost:3003
+```
+
+---
+
+### Cart Service
+
+Responsible for customer cart lifecycle.
+
+Responsibilities:
+
+- Create carts
+- Retrieve carts
+- Add items to carts
+- Track item reservation status
+- Checkout carts
+- Publish checkout events
+- Persist carts and cart items in PostgreSQL
+
+Runs on:
+
+```txt
+http://localhost:3002
 ```
 
 ---
@@ -135,9 +156,7 @@ Responsibilities:
 - Create orders
 - Store order items
 - Retrieve persisted orders
-- Prevent duplicate orders for the same cart
 - Persist orders and order items in PostgreSQL
-- Expose service/database/RabbitMQ health status
 
 Runs on:
 
@@ -181,80 +200,13 @@ Order Service
 
 ---
 
-## Idempotent Order Creation
-
-The Order Service is designed to handle duplicate checkout events safely.
-
-RabbitMQ can deliver messages more than once in real-world distributed systems. To prevent duplicate orders, the Order Service enforces one order per cart.
-
-This is handled by:
-
-- Checking for an existing order by `cartId`
-- Adding a unique database constraint/index on `cart_id`
-- Returning the existing order when a duplicate checkout event is received
-- Handling PostgreSQL unique constraint violations safely
-
-This means if the same `CHECKOUT_COMPLETED` event is received multiple times:
-
-```txt
-First event      → creates order
-Duplicate event  → returns existing order
-Duplicate event  → returns existing order
-```
-
-Expected result:
-
-```txt
-Only one order exists for the same cartId
-```
-
----
-
-## Health Checks
-
-Each service exposes a health endpoint:
-
-```http
-GET /health
-```
-
-Example response:
-
-```json
-{
-  "service": "cart-service",
-  "status": "ok",
-  "database": "connected",
-  "rabbitmq": "ok",
-  "uptime": 42.12,
-  "timestamp": "2026-05-15T20:00:00.000Z"
-}
-```
-
-Health checks include:
-
-- Service availability
-- PostgreSQL connectivity
-- RabbitMQ connectivity where applicable
-- Process uptime
-- Timestamp
-
-### Health Check URLs
-
-```http
-GET http://localhost:3001/health
-GET http://localhost:3002/health
-GET http://localhost:3003/health
-GET http://localhost:3004/health
-```
-
----
-
 ## Tech Stack
 
 - Node.js
 - TypeScript
 - Express
+- API Gateway
+- http-proxy-middleware
 - RabbitMQ
 - PostgreSQL
 - Docker
@@ -272,8 +224,8 @@ node-microservices-retail/
 ├── docker-compose.yml
 ├── services/
 │   ├── product-service/
-│   ├── cart-service/
 │   ├── inventory-service/
+│   ├── cart-service/
 │   └── order-service/
 ```
 
@@ -322,8 +274,8 @@ Expected containers:
 
 ```txt
 product-service
-cart-service
 inventory-service
+cart-service
 order-service
 postgres
 rabbitmq
@@ -333,14 +285,14 @@ rabbitmq
 
 ## Service URLs
 
-| Service                | URL                      |
-| ---------------------- | ------------------------ |
-| Product Service        | `http://localhost:3001`  |
-| Cart Service           | `http://localhost:3002`  |
-| Inventory Service      | `http://localhost:3003`  |
-| Order Service          | `http://localhost:3004`  |
+| Service | URL |
+|---|---|
+| Product Service | `http://localhost:3001` |
+| Cart Service | `http://localhost:3002` |
+| Inventory Service | `http://localhost:3003` |
+| Order Service | `http://localhost:3004` |
 | RabbitMQ Management UI | `http://localhost:15672` |
-| PostgreSQL             | `localhost:5432`         |
+| PostgreSQL | `localhost:5432` |
 
 RabbitMQ default login:
 
@@ -377,23 +329,82 @@ postgresql://postgres:password@postgres:5432/db
 
 ## Database Tables
 
-| Service           | Tables                  |
-| ----------------- | ----------------------- |
-| Product Service   | `products`              |
-| Inventory Service | `inventory`             |
-| Cart Service      | `carts`, `cart_items`   |
-| Order Service     | `orders`, `order_items` |
+| Service | Tables |
+|---|---|
+| Product Service | `products` |
+| Inventory Service | `inventory` |
+| Cart Service | `carts`, `cart_items` |
+| Order Service | `orders`, `order_items` |
 
 ---
 
 ## API Endpoints
 
-## Product Service
+## API Gateway
 
 Base URL:
 
 ```txt
+http://localhost:3000
+```
+
+The API Gateway is the preferred external entry point for calling the platform.
+
+### Gateway Health Check
+
+```http
+GET /health
+```
+
+### Product Routes
+
+```http
+GET /api/products
+POST /api/products
+GET /api/products/:id
+PATCH /api/products/:id
+DELETE /api/products/:id
+```
+
+### Cart Routes
+
+```http
+POST /api/carts
+GET /api/carts/:cartId
+POST /api/carts/:cartId/items
+POST /api/carts/:cartId/checkout
+```
+
+### Inventory Routes
+
+```http
+POST /api/inventory
+GET /api/inventory/:productId
+PATCH /api/inventory/:productId/reserve
+PATCH /api/inventory/:productId/release
+PATCH /api/inventory/:productId/confirm
+```
+
+### Order Routes
+
+```http
+GET /api/orders
+```
+
+---
+
+## Product Service
+
+Direct service base URL:
+
+```txt
 http://localhost:3001
+```
+
+Gateway base URL:
+
+```txt
+http://localhost:3000/api/products
 ```
 
 ### Create Product
@@ -444,69 +455,20 @@ Example body:
 DELETE /products/:id
 ```
 
-### Health Check
-
-```http
-GET /health
-```
-
----
-
-## Cart Service
-
-Base URL:
-
-```txt
-http://localhost:3002
-```
-
-### Create Cart
-
-```http
-POST /carts
-```
-
-### Get Cart
-
-```http
-GET /carts/:cartId
-```
-
-### Add Item to Cart
-
-```http
-POST /carts/:cartId/items
-```
-
-Example body:
-
-```json
-{
-  "productId": "product-id-here",
-  "quantity": 2
-}
-```
-
-### Checkout Cart
-
-```http
-POST /carts/:cartId/checkout
-```
-
-### Health Check
-
-```http
-GET /health
-```
-
 ---
 
 ## Inventory Service
 
-Base URL:
+Direct service base URL:
 
 ```txt
 http://localhost:3003
+```
+
+Gateway base URL:
+
+```txt
+http://localhost:3000/api/inventory
 ```
 
 ### Create Inventory
@@ -572,32 +534,75 @@ Example body:
 }
 ```
 
-### Health Check
+---
+
+## Cart Service
+
+Direct service base URL:
+
+```txt
+http://localhost:3002
+```
+
+Gateway base URL:
+
+```txt
+http://localhost:3000/api/carts
+```
+
+### Create Cart
 
 ```http
-GET /health
+POST /carts
+```
+
+### Get Cart
+
+```http
+GET /carts/:cartId
+```
+
+### Add Item to Cart
+
+```http
+POST /carts/:cartId/items
+```
+
+Example body:
+
+```json
+{
+  "productId": "product-id-here",
+  "quantity": 2
+}
+```
+
+### Checkout Cart
+
+```http
+POST /carts/:cartId/checkout
 ```
 
 ---
 
 ## Order Service
 
-Base URL:
+Direct service base URL:
 
 ```txt
 http://localhost:3004
+```
+
+Gateway base URL:
+
+```txt
+http://localhost:3000/api/orders
 ```
 
 ### Get Orders
 
 ```http
 GET /orders
-```
-
-### Health Check
-
-```http
-GET /health
 ```
 
 ---
@@ -607,7 +612,7 @@ GET /health
 ### 1. Create a Product
 
 ```http
-POST http://localhost:3001/products
+POST http://localhost:3000/api/products
 ```
 
 ```json
@@ -623,7 +628,7 @@ Copy the returned product ID.
 ### 2. Create Inventory
 
 ```http
-POST http://localhost:3003/inventory
+POST http://localhost:3000/api/inventory
 ```
 
 ```json
@@ -636,7 +641,7 @@ POST http://localhost:3003/inventory
 ### 3. Create Cart
 
 ```http
-POST http://localhost:3002/carts
+POST http://localhost:3000/api/carts
 ```
 
 Copy the returned cart ID.
@@ -644,7 +649,7 @@ Copy the returned cart ID.
 ### 4. Add Item to Cart
 
 ```http
-POST http://localhost:3002/carts/paste-cart-id-here/items
+POST http://localhost:3000/api/carts/paste-cart-id-here/items
 ```
 
 ```json
@@ -669,7 +674,7 @@ RESERVED
 ### 5. Get Cart
 
 ```http
-GET http://localhost:3002/carts/paste-cart-id-here
+GET http://localhost:3000/api/carts/paste-cart-id-here
 ```
 
 Expected item status:
@@ -681,7 +686,7 @@ RESERVED
 ### 6. Checkout
 
 ```http
-POST http://localhost:3002/carts/paste-cart-id-here/checkout
+POST http://localhost:3000/api/carts/paste-cart-id-here/checkout
 ```
 
 The cart should become:
@@ -693,59 +698,13 @@ CHECKED_OUT
 ### 7. Get Orders
 
 ```http
-GET http://localhost:3004/orders
+GET http://localhost:3000/api/orders
 ```
 
 Expected result:
 
 ```txt
 Order created and persisted
-```
-
----
-
-## Idempotency Test
-
-To test duplicate checkout event handling:
-
-1. Complete a normal checkout flow.
-2. Open RabbitMQ Management UI:
-
-```txt
-http://localhost:15672
-```
-
-3. Go to:
-
-```txt
-Queues and Streams → order_queue → Publish message
-```
-
-4. Publish the same checkout event more than once:
-
-```json
-{
-  "type": "CHECKOUT_COMPLETED",
-  "cartId": "existing-cart-id",
-  "items": [
-    {
-      "productId": "existing-product-id",
-      "quantity": 2
-    }
-  ]
-}
-```
-
-5. Call:
-
-```http
-GET http://localhost:3004/orders
-```
-
-Expected result:
-
-```txt
-Only one order should exist for the same cartId.
 ```
 
 ---
@@ -769,7 +728,7 @@ Then call:
 GET http://localhost:3001/products
 GET http://localhost:3003/inventory/:productId
 GET http://localhost:3002/carts/:cartId
-GET http://localhost:3004/orders
+GET http://localhost:3000/api/orders
 ```
 
 Expected result:
@@ -818,6 +777,18 @@ docker compose up -d --build --force-recreate cart-service
 docker compose logs -f cart-service
 ```
 
+### View API Gateway logs
+
+```bash
+docker compose logs -f api-gateway
+```
+
+### Rebuild API Gateway
+
+```bash
+docker compose up -d --build --force-recreate api-gateway
+```
+
 ### Check environment variable inside container
 
 ```bash
@@ -830,36 +801,38 @@ docker compose exec product-service printenv DATABASE_URL
 docker exec -it postgres psql -U postgres -d db
 ```
 
-### Connect to order database
-
-```bash
-docker exec -it postgres psql -U postgres -d retail_orders
-```
-
-### Inspect orders table
-
-```sql
-\d orders
-```
-
 ---
 
 ## Key Design Decisions
 
-### 1. Microservice Separation
+### 1. API Gateway as Single Entry Point
+
+External clients call the API Gateway instead of calling each service directly.
+
+```txt
+Client
+   ↓
+API Gateway
+   ↓
+Internal services
+```
+
+This keeps client-facing URLs simple and provides a future place for cross-cutting concerns such as authentication, rate limiting, request validation, and centralized request logging.
+
+### 2. Microservice Separation
 
 Each service owns a specific business capability:
 
 ```txt
 Products
-Carts
 Inventory
+Carts
 Orders
 ```
 
 This keeps responsibilities clear and makes each service easier to reason about.
 
-### 2. Event-Driven Inventory Reservation
+### 3. Event-Driven Inventory Reservation
 
 Adding an item to the cart does not directly mutate cart state to reserved.
 
@@ -874,13 +847,13 @@ Cart item status changes to RESERVED or FAILED
 
 This models asynchronous distributed system behaviour.
 
-### 3. PostgreSQL Persistence
+### 4. PostgreSQL Persistence
 
 Each service persists its own state to PostgreSQL.
 
 This ensures data survives service restarts and moves the project beyond in-memory demo storage.
 
-### 4. Docker Compose Networking
+### 5. Docker Compose Networking
 
 Services communicate using Docker service names:
 
@@ -901,7 +874,7 @@ localhost
 
 because `localhost` means the container itself.
 
-### 5. Repository Pattern
+### 6. Repository Pattern
 
 Database logic is isolated inside repository classes.
 
@@ -911,187 +884,39 @@ This keeps route and service layers cleaner:
 Route → Service → Repository → PostgreSQL
 ```
 
-### 6. Idempotency at the Order Boundary
-
-The Order Service protects against duplicate order creation by enforcing uniqueness on `cart_id`.
-
-This is important because event-driven systems may deliver the same message more than once.
-
-### 7. Health Checks
-
-Each service exposes a `/health` endpoint to make local debugging and operational visibility easier.
-
 ---
 
-## Dead Letter Queue Handling
+## Current Limitations
 
-The project uses Dead Letter Queues (DLQs) to handle invalid or unprocessable RabbitMQ messages safely.
+This project is intentionally focused on backend architecture and distributed systems concepts.
 
-A DLQ is used when a message cannot be processed due to a technical issue, invalid format, or unexpected payload shape.
+Current limitations:
 
-Instead of retrying forever or silently losing the message, the service rejects the message and RabbitMQ routes it to a dedicated dead-letter queue.
-
----
-
-## Dead Letter Queues
-
-| Main Queue        | Dead Letter Exchange | Dead Letter Queue | Routing Key        |
-| ----------------- | -------------------- | ----------------- | ------------------ |
-| `inventory_queue` | `inventory_dlx`      | `inventory_dlq`   | `inventory_failed` |
-| `cart_queue`      | `cart_dlx`           | `cart_dlq`        | `cart_failed`      |
-| `order_queue`     | `order_dlx`          | `order_dlq`       | `order_failed`     |
-
----
-
-## Why DLQs Are Used
-
-RabbitMQ messages may fail for different reasons.
-
-Examples of messages that should go to a DLQ:
-
-```txt
-Invalid JSON
-Missing required fields
-Unknown event type
-Unexpected payload shape
-Unhandled technical exception
-```
-
-Examples of messages that should not go to a DLQ:
-
-```txt
-Insufficient stock
-Cart item reservation failed due to business rules
-Duplicate checkout event already handled
-```
-
-Business failures are handled as valid application outcomes.
-
-For example, if inventory is insufficient, the Inventory Service publishes a STOCK_FAILED event to the Cart Service rather than dead-lettering the message.
-
----
-
-## Business Failure vs Technical Failure
-
-### Business Failure
-
-A business failure is an expected outcome in the domain.
-
-Example:
-
-```txt
-Customer requests 5 items
-Only 2 items are available
-Inventory cannot reserve stock
-Inventory Service publishes STOCK_FAILED
-Cart Service marks item as FAILED
-Message is acknowledged
-```
-
-This does not go to a DLQ because the system handled the scenario correctly.
-
-### Technical Failure
-
-A technical failure means the message cannot be safely processed.
-
-Example:
-
-```txt
-Message payload is not valid JSON
-Message is missing productId
-Message has an unknown event type
-Service cannot understand the event
-Message is rejected
-RabbitMQ routes it to the DLQ
-```
-
-This goes to a DLQ so it can be inspected later.
-
-## DLQ Flow
-
-### Inventory Queue
-
-```txt
-Cart Service
-   ↓ publishes RESERVE_STOCK
-inventory_queue
-   ↓ consumed by inventory-service
-invalid/unprocessable message
-   ↓ rejected with requeue=false
-inventory_dlx
-   ↓ routes using inventory_failed
-inventory_dlq
-```
-
-### Cart Queue
-
-```txt
-Inventory Service
-   ↓ publishes STOCK_RESERVED or STOCK_FAILED
-cart_queue
-   ↓ consumed by cart-service
-invalid/unprocessable message
-   ↓ rejected with requeue=false
-cart_dlx
-   ↓ routes using cart_failed
-cart_dlq
-```
-
-### Order Queue
-
-```txt
-Cart Service
-   ↓ publishes CHECKOUT_COMPLETED
-order_queue
-   ↓ consumed by order-service
-invalid/unprocessable message
-   ↓ rejected with requeue=false
-order_dlx
-   ↓ routes using order_failed
-order_dlq
-```
-
-### How DLQ Rejection works
-
-When a message is invalid, the consumer rejects it using:
-
-```txt
-channel.reject(msg, false);
-```
-
-The second argument means:
-
-```txt
-false = do not requeue the message
-```
-
-Because the queue is configured with a dead-letter exchange, RabbitMQ moves the rejected message to the configured DLQ.
-
-## Current Messaging Reliability Features
-
-The projects currently supports:
-
-- RabbitMQ acknowledgements
-- Business failure events
-- Dead Letter Queues
-- Invalid JSON handling
-- Invalid event shape handling
-- Order idempotency
-- Duplicate checkout event protection
+- No authentication or authorization
+- No frontend
+- No payment integration
+- No production deployment
+- No database migration tool
+- No centralized logging
+- No distributed tracing
+- No automated integration test suite yet
+- No retry/dead-letter queue strategy yet
 
 ---
 
 ## Possible Future Improvements
 
-- Retry queues
-- Delayed retries
-- Dead-letter message inspection endpoint
-- Correlation IDs
-- Event IDs
-- Event versioning
-- Centralized event contracts
-- Poison message alerting
-- Structured logging for rejected messages
+- Add health check endpoints for all services
+- Add database migrations
+- Add idempotency for checkout/order creation
+- Add dead-letter queues for failed events
+- Add integration tests
+- Add OpenAPI/Swagger documentation
+- Add structured logging
+- Add observability with metrics/tracing
+- Add authentication
+- Split PostgreSQL databases per service
+- Add CI pipeline
 
 ---
 
@@ -1099,16 +924,12 @@ The projects currently supports:
 
 This project demonstrates a local microservices retail backend with:
 
+- API Gateway as a single external entry point
 - Multiple independently running services
 - RabbitMQ-based asynchronous messaging
 - PostgreSQL persistence
 - Docker Compose orchestration
-- Product, cart, inventory, and order workflows
-- Health checks
-- Database connectivity checks
-- RabbitMQ connectivity checks
-- Idempotent order creation
-- Duplicate event handling
+- Product, inventory, cart, and order workflows
 - Data persistence across restarts
 
 It is designed as a practical learning and portfolio project for backend engineering, microservices, and distributed systems.
