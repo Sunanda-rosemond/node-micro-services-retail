@@ -10,6 +10,25 @@ services:
       interval: 10s
       timeout: 30s
       retries: 12
+  api-gateway:
+    build:
+      context: ./services/api-gateway
+    container_name: api-gateway
+    ports:
+      - '3000:3000'
+    volumes:
+      - ./services/api-gateway:/app
+      - /app/node_modules
+    depends_on:
+      product-service:
+        condition: service_started
+      cart-service:
+        condition: service_started
+      inventory-service:
+        condition: service_started
+      order-service:
+        condition: service_started
+
   product-service:
     build:
       context: ./services/product-service
